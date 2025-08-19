@@ -1,0 +1,52 @@
+# PowerShell Script to Migrate Git Repositories Between GitHub Organizations or Enterprises
+
+# Prerequisites:
+# - Git installed and available in PATH
+# - GitHub CLI (gh) installed and authenticated for both source and destination
+# - Permissions to clone and push to both source and destination repos
+
+param (
+    [string]$sourceOrg = "source-org",
+    [string]$destinationOrg = "destination-org",
+    [string]$repoListFile = "repos.txt",  # A text file with one repo name per line
+    [string]$tempDir = "./temp-repos"
+)
+
+# Create temp directory if it doesn't exist
+if (!(Test-Path -Path $tempDir)) {
+    New-Item -ItemType Directory -Path $tempDir | Out-Null
+}
+
+# Read repo names from file
+$repos = Get-Content -Path $repoListFile
+
+foreach ($repo in $repos) {
+    Write-Host "
+Migrating repository: $repo" -ForegroundColor Cyan
+
+    $sourceUrl = "https://github.com/$sourceOrg/$repo.git"
+    $destinationUrl = "https://github.com/$destinationOrg/$repo.git"
+    $localPath = Join-Path $tempDir $repo
+
+    # Clone the repo with all branches and tags
+    git clone --mirror $sourceUrl $localPath
+
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "Failed to clone $repo from $sourceOrg" -ForegroundColor Red
+        continue
+    }
+
+    # Create the destination repo if it doesn't exist
+    gh repo create "$destinationOrg/$repo" --private --confirm
+
+    # Push all refs (branches and tags) to the destination
+    Push-Location $localPath
+    git remote set-url origin $destinationUrl
+    git push --mirror
+    Pop-Location
+
+    Write-Host "Successfully migrated $repo" -ForegroundColor Green
+}
+
+Write-Host "
+Migration complete." -ForegroundColor Yellow
